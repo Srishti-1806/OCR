@@ -1,0 +1,22 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+python-multipart==0.0.9
+pydantic==2.7.4
+
+# OCR
+paddleocr==2.7.3
+paddlepaddle>=2.6.2
+
+# PDF -> Image
+pdf2image==1.17.0
+
+# Image processing
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+Pillow==10.3.0
+
+# Fuzzy label matching (optional, used only if you add rule-based fallbacks)
+rapidfuzz==3.9.4
+
+# LLM (Extraction Service) — internal MCP LLM client via HTTP
+httpx==0.27.0

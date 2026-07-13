@@ -1,0 +1,116 @@
+{
+  "success": true,
+  "data": {
+    "filename": "Sample-Fillable-PDF.pdf",
+    "page_count": 1,
+    "fields": [
+      {
+        "label": "title",
+        "value": "Sample Fillable PDF",
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "description",
+        "value": [
+          "This is an example of a fillable PDF. A client can save it and email it back to you, or print it and",
+          "bring it along with them to a meeting with you."
+        ],
+        "confidence": 0.85,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "name",
+        "value": null,
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "item_selection",
+        "value": null,
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "first_choice",
+        "value": "First Choice",
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "checkboxes",
+        "value": [
+          {
+            "label": "Option 1",
+            "checked": false
+          },
+          {
+            "label": "Option 2",
+            "checked": false
+          },
+          {
+            "label": "Option 3",
+            "checked": false
+          }
+        ],
+        "confidence": 0.85,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "table_header",
+        "value": "You can add  fields within tables as well:",
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "dependent_table",
+        "value": {
+          "headers": [
+            "Name of Dependent",
+            "Age of Dependent"
+          ],
+          "rows": [
+            [
+              null,
+              null
+            ]
+          ]
+        },
+        "confidence": 0.85,
+        "field_type": "table",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "choice_1",
+        "value": "Choice 1",
+        "confidence": 0.85,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      }
+    ],
+    "raw_token_count": 14,
+    "llm_attempts": 1,
+    "warnings": [
+      "Checkbox states are assumed false as no checkmarks are visible in OCR text.",
+      "Table rows are empty as no data values were provided in OCR.",
+      "Double space in 'add  fields' preserved as per OCR."
+    ]
+  },
+  "error": null
+}
