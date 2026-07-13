@@ -1,0 +1,245 @@
+{
+  "success": true,
+  "data": {
+    "filename": "IPA Worksheet V7.pdf",
+    "page_count": 10,
+    "fields": [
+      {
+        "label": "form_title",
+        "value": "In Person Assessment Form",
+        "confidence": 0.95,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "part_a_header",
+        "value": "Part A",
+        "confidence": 0.95,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q1_understands_interview",
+        "value": "{'understands': None, 'concerns': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q2_verify_contact_info",
+        "value": "{'verified': None, 'differences': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q3_mobility_aids",
+        "value": "{'na': None, 'power_wheelchair': None, 'manual_wheelchair': None, 'white_cane': None, 'prostheses': None, 'service_animal': None, 'picture_board': None, 'crutches': None, 'leg_braces': None, 'hearing_aid': None, 'alphabet_board': None, 'scooter': None, 'rollator': None, 'support_cane': None, 'walker': None, 'portable_oxygen': None, 'electronic_travel_device': None, 'voice_box': None, 'interpreter': None, 'other': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q4_understands_difference",
+        "value": "{'understands': None, 'closest_bus_stop_address': None, 'in_service_area': None, 'bus_stop': None, 'routes': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "part_a_signature",
+        "value": "{'applicant': None, 'date': None, 'id': None, 'dob': None, 'age': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "medications_taken",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "comments_considerations",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "part_b_header",
+        "value": "Part B",
+        "confidence": 0.95,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q1_fixed_route_limits",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q2_prevention_details",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "text",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q3_weather_impact",
+        "value": "{'affected': None, 'hot': None, 'cold': None, 'rain': None, 'wind': None, 'snow': None, 'ice': None, 'fog_humidity': None, 'other_weather': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q4_stairs",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q5_tried_fixed_route",
+        "value": "{'tried': None, 'how_recent': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q6_shown_how_to_use",
+        "value": "{'shown': None, 'how_recent': None, 'who_showed': None, 'wants_training': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q7_closest_bus_stop",
+        "value": "{'knows_location': None, 'can_tell_location': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q8_terrain_description",
+        "value": "{'sidewalks': None, 'hills': None, 'grass': None, 'gravel': None, 'distance': None, 'other_terrain': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q9_get_to_bus_stop",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q10_assistance_needed",
+        "value": "{'needs_assistance': None, 'type_of_assistance': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q15_route_schedule",
+        "value": "{'route_number': None, 'can_identify': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q16_coin_identification",
+        "value": "{'can_identify_coins': None, 'total_amount': None, 'can_pay_fare': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q17_dvi_card",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q18_traffic_light_meanings",
+        "value": "{'red_meaning': None, 'yellow_meaning': None, 'green_meaning': None, 'safe_to_cross': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q19_walk_dont_walk_signs",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q20_bus_identification",
+        "value": null,
+        "confidence": 0.9,
+        "field_type": "checkbox",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q21_bus_stop_sign",
+        "value": "{'knows_sign': None, 'can_catch_bus': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q22_bus_destination_signs",
+        "value": "{'can_read_signs': None, 'what_signs_tell': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      },
+      {
+        "label": "q11_reduced_fare_program",
+        "value": "{'knows_program': None, 'has_card': None}",
+        "confidence": 0.9,
+        "field_type": "multiline",
+        "valid": true,
+        "validation_message": null
+      }
+    ],
+    "raw_token_count": 376,
+    "llm_attempts": 1,
+    "warnings": []
+  },
+  "error": null
+}

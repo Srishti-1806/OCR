@@ -14,6 +14,7 @@ Public API used by the router:
     run_ocr_on_image(image, page_num) -> List[OCRToken]
     build_ocr_result(filename, tokens, page_count) -> OCRResult
 """
+import os
 import uuid
 from pathlib import Path
 from typing import List
@@ -132,12 +133,13 @@ def preprocess(image: np.ndarray) -> np.ndarray:
 def _load_engine():
     global _engine
     if _engine is None:
-        import os
-        from paddleocr import PaddleOCR
         os.environ.setdefault("FLAGS_use_mkldnn", "0")
         os.environ.setdefault("FLAGS_use_ngraph", "0")
-        logger.info(f"Loading PaddleOCR engine (lang={settings.OCR_LANG})...")
-        _engine = PaddleOCR(use_angle_cls=True, lang=settings.OCR_LANG, show_log=False)
+        os.environ.setdefault("FLAGS_use_gpu", "0")
+        os.environ.setdefault("PADDLE_WITH_CUDA", "0")
+        from paddleocr import PaddleOCR
+        logger.info(f"Loading PaddleOCR engine (lang={settings.OCR_LANG}) in CPU-only mode...")
+        _engine = PaddleOCR(use_angle_cls=True, lang=settings.OCR_LANG, show_log=False, use_gpu=False)
     return _engine
 
 

@@ -17,38 +17,27 @@ from typing import Dict, Any, List
 
 import httpx
 
-try:
-    import anthropic
-except ImportError:  # pragma: no cover - optional dependency
-    anthropic = None
-
 from app.core.config import settings
 from app.core.logging_config import get_logger
 from app.models.schemas import OCRResult, ExtractionResult, ExtractedField
 
 logger = get_logger(__name__)
 
-_client = None
-
-
-def _get_client() -> Any:
-    global _client
-    if _client is None:
-        if anthropic is None:
-            raise RuntimeError("anthropic package is not installed")
-        _client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
-    return _client
-
-
 def _call_openai_compatible_llm(user_prompt: str) -> str:
-    api_base = (settings.LLM_API_BASE_URL or "").rstrip("/")
+    api_base = (settings.LLM_API_BASE_URL or settings.LLM_URL or "").rstrip("/")
     if not api_base:
-        raise RuntimeError("LLM_API_BASE_URL is not configured")
+        raise RuntimeError("LLM API URL is not configured. Set LLM_API_BASE_URL or llm_url.")
 
     url = f"{api_base}/chat/completions"
     headers = {}
     if settings.LLM_API_KEY:
-        headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
+        header_name = settings.LLM_API_KEY_HEADER.strip().lower()
+        if header_name == "authorization":
+            headers["Authorization"] = f"Bearer {settings.LLM_API_KEY}"
+        elif header_name == "x-api-key":
+            headers["X-Api-Key"] = settings.LLM_API_KEY
+        else:
+            headers[settings.LLM_API_KEY_HEADER] = settings.LLM_API_KEY
 
     payload = {
         "model": settings.LLM_MODEL,
@@ -141,31 +130,85 @@ Rules:
 def _extract_json_block(text: str) -> str:
     """Strips markdown fences if the model adds them despite instructions."""
     text = text.strip()
-    text = re.sub(r"^```(json)?", "", text).strip()
-    text = re.sub(r"```$", "", text).strip()
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE).strip()
+    text = re.sub(r"\s*```$", "", text).strip()
     return text
+
+
+def _remove_trailing_commas(text: str) -> str:
+    return re.sub(r",(\s*[}\]])", r"\1", text)
+
+
+def _salvage_truncated_json(text: str) -> str:
+    text = _extract_json_block(text)
+    text = _remove_trailing_commas(text)
+
+    in_string = False
+    escape = False
+    stack = []  # list of tuples (opening_char, index)
+
+    for idx, ch in enumerate(text):
+        if escape:
+            escape = False
+            continue
+        if ch == "\\":
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == "{":
+            stack.append(("{", idx))
+        elif ch == "[":
+            stack.append(("[", idx))
+        elif ch == "}":
+            if stack and stack[-1][0] == "{":
+                stack.pop()
+        elif ch == "]":
+            if stack and stack[-1][0] == "[":
+                stack.pop()
+
+    if in_string:
+        text += '"'
+
+    if not stack:
+        return _remove_trailing_commas(text)
+
+    truncated = text[: stack[-1][1] ].rstrip(", \n\r\t")
+    while truncated and truncated[-1] in "{[,:":
+        truncated = truncated[:-1].rstrip(", \n\r\t")
+
+    for kind, _ in reversed(stack[:-1]):
+        truncated += "}" if kind == "{" else "]"
+
+    truncated = _remove_trailing_commas(truncated)
+    truncated = truncated.rstrip()
+    if truncated and truncated[-1] not in "}]":
+        truncated += "}"
+    return truncated
 
 
 def call_llm(context: str, filename: str) -> Dict[str, Any]:
     user_prompt = f"Filename: {filename}\n\nOCR layout (line-grouped):\n{context}"
 
-    if settings.LLM_API_BASE_URL:
-        raw_text = _call_openai_compatible_llm(user_prompt)
-    else:
-        client = _get_client()
-        response = client.messages.create(
-            model=settings.LLM_MODEL,
-            max_tokens=settings.LLM_MAX_TOKENS,
-            system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": user_prompt}],
-        )
+    if not settings.LLM_API_BASE_URL:
+        raise RuntimeError("LLM API URL is not configured. Set LLM_API_BASE_URL or llm_url.")
 
-        raw_text = "".join(
-            block.text for block in response.content if getattr(block, "type", None) == "text"
-        )
+    raw_text = _call_openai_compatible_llm(user_prompt)
 
     cleaned = _extract_json_block(raw_text)
-    return json.loads(cleaned)  # raises JSONDecodeError if invalid -> triggers retry
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError as exc:
+        salvaged_text = _salvage_truncated_json(raw_text)
+        try:
+            return json.loads(salvaged_text)
+        except json.JSONDecodeError as exc2:
+            raise ValueError(
+                f"LLM output JSON parsing failed: {exc}; salvage failed: {exc2}. Raw output: {raw_text[:2000]}"
+            ) from exc2
 
 
 # --------------------------------------------------------------------------
