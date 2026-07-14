@@ -13,14 +13,21 @@ Public API used by the router:
     preprocess(image) -> np.ndarray
     run_ocr_on_image(image, page_num) -> List[OCRToken]
     build_ocr_result(filename, tokens, page_count) -> OCRResult
+
+NOTE on Surya OCR:
+    Requires: pip install "surya-ocr==0.17.1" --break-system-packages
+    (0.20+ switched to a vllm/llama.cpp server-based API with different
+    imports — pin 0.17.1 to keep the simple DetectionPredictor /
+    RecognitionPredictor API used below)
 """
 import os
 import uuid
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import cv2
 import numpy as np
+from PIL import Image
 import fitz
 
 from app.core.config import settings
@@ -31,6 +38,7 @@ from app.utils.geometry import group_into_lines
 logger = get_logger(__name__)
 
 _engine = None  # lazy-loaded singleton
+_surya_engine = None  # lazy-loaded (det_predictor, rec_predictor) tuple
 
 
 # --------------------------------------------------------------------------
@@ -128,46 +136,192 @@ def preprocess(image: np.ndarray) -> np.ndarray:
 
 
 # --------------------------------------------------------------------------
-# OCR engine (PaddleOCR by default; swap here if engine changes)
+# OCR engine (RapidOCR by default; optional Surya fallback for low-confidence regions)
 # --------------------------------------------------------------------------
 def _load_engine():
     global _engine
     if _engine is None:
-        os.environ.setdefault("FLAGS_use_mkldnn", "0")
-        os.environ.setdefault("FLAGS_use_ngraph", "0")
-        os.environ.setdefault("FLAGS_use_gpu", "0")
-        os.environ.setdefault("PADDLE_WITH_CUDA", "0")
-        from paddleocr import PaddleOCR
-        logger.info(f"Loading PaddleOCR engine (lang={settings.OCR_LANG}) in CPU-only mode...")
-        _engine = PaddleOCR(use_angle_cls=True, lang=settings.OCR_LANG, show_log=False, use_gpu=False)
+        backend = (settings.OCR_ENGINE or "rapidocr").lower()
+        if backend == "surya":
+            try:
+                from surya.foundation import FoundationPredictor
+                from surya.detection import DetectionPredictor
+                from surya.recognition import RecognitionPredictor
+                logger.info("Loading Surya OCR engine...")
+                foundation_predictor = FoundationPredictor()
+                _engine = {
+                    "det": DetectionPredictor(),
+                    "rec": RecognitionPredictor(foundation_predictor),
+                }
+                return _engine
+            except Exception as exc:
+                logger.warning("Surya OCR requested but unavailable: %s; falling back to RapidOCR", exc)
+
+        from rapidocr_onnxruntime import RapidOCR
+        logger.info(f"Loading RapidOCR engine (ONNX Runtime, lang={settings.OCR_LANG})...")
+        _engine = RapidOCR()
     return _engine
+
+
+def _load_surya_engine():
+    """Lazily builds and caches the (det_predictor, rec_predictor) pair.
+    Returns None if surya-ocr isn't installed / fails to import."""
+    global _surya_engine
+    if _surya_engine is None:
+        try:
+            from surya.foundation import FoundationPredictor
+            from surya.detection import DetectionPredictor
+            from surya.recognition import RecognitionPredictor
+            foundation_predictor = FoundationPredictor()
+            det_predictor = DetectionPredictor()
+            rec_predictor = RecognitionPredictor(foundation_predictor)
+            _surya_engine = (det_predictor, rec_predictor)
+        except Exception as exc:
+            logger.info("Surya OCR module unavailable: %s", exc)
+            _surya_engine = False
+            return None
+    return None if _surya_engine is False else _surya_engine
+
+
+def _run_surya_ocr_on_region(image: np.ndarray) -> List[tuple]:
+    """Runs Surya OCR on a cropped BGR numpy region and returns results in
+    the same (box_points, text, confidence) tuple shape RapidOCR produces,
+    so nothing downstream needs to know which engine ran."""
+    engines = _load_surya_engine()
+    if engines is None or image.size == 0:
+        return []
+    det_predictor, rec_predictor = engines
+
+    # Surya expects RGB PIL images, not BGR numpy arrays
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    pil_img = Image.fromarray(rgb)
+
+    try:
+        predictions = rec_predictor([pil_img], det_predictor=det_predictor)
+    except Exception as exc:  # pragma: no cover - runtime dependency path
+        logger.info("Surya OCR fallback failed: %s", exc)
+        return []
+
+    if not predictions or not predictions[0].text_lines:
+        return []
+
+    results = []
+    for line in predictions[0].text_lines:
+        x1, y1, x2, y2 = line.bbox
+        box_points = [[x1, y1], [x2, y1], [x2, y2], [x1, y2]]
+        confidence = float(line.confidence) if line.confidence is not None else 0.0
+        results.append((box_points, line.text.strip(), confidence))
+
+    return results
+
+
+def _crop_region(image: np.ndarray, bbox: BoundingBox, padding: float = 0.15) -> np.ndarray:
+    h, w = image.shape[:2]
+    pad_x = int(max(1, (bbox.x2 - bbox.x1) * padding))
+    pad_y = int(max(1, (bbox.y2 - bbox.y1) * padding))
+    x1 = max(0, int(bbox.x1) - pad_x)
+    y1 = max(0, int(bbox.y1) - pad_y)
+    x2 = min(w, int(bbox.x2) + pad_x)
+    y2 = min(h, int(bbox.y2) + pad_y)
+    return image[y1:y2, x1:x2]
+
+
+def _detect_checkbox_regions(image: np.ndarray) -> List[BoundingBox]:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
+    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes: List[BoundingBox] = []
+    for contour in contours:
+        area = cv2.contourArea(contour)
+        if area < 200:
+            continue
+        x, y, w, h = cv2.boundingRect(contour)
+        if w < 12 or h < 12:
+            continue
+        aspect = w / float(h)
+        if aspect < 0.7 or aspect > 1.4:
+            continue
+        boxes.append(BoundingBox(x1=float(x), y1=float(y), x2=float(x + w), y2=float(y + h)))
+    return boxes
 
 
 def run_ocr_on_image(image: np.ndarray, page_num: int = 0) -> List[OCRToken]:
     engine = _load_engine()
-    result = engine.ocr(image, cls=True)
+    result, _elapse = engine(image)
 
     tokens: List[OCRToken] = []
-    if not result or result[0] is None:
+    if not result:
         return tokens
 
-    for line in result[0]:
-        box_points, (text, confidence) = line
+    for box_points, text, confidence in result:
         xs = [p[0] for p in box_points]
         ys = [p[1] for p in box_points]
         bbox = BoundingBox(x1=min(xs), y1=min(ys), x2=max(xs), y2=max(ys))
         tokens.append(
-            OCRToken(text=text.strip(), bbox=bbox, confidence=float(confidence), page=page_num)
+            OCRToken(
+                text=text.strip(),
+                bbox=bbox,
+                confidence=float(confidence),
+                page=page_num,
+                ocr_source="rapidocr",
+            )
+        )
+
+    threshold = settings.OCR_CONFIDENCE_THRESHOLD
+    refined_tokens: List[OCRToken] = []
+    for token in tokens:
+        if token.confidence >= threshold:
+            refined_tokens.append(token)
+            continue
+
+        region = _crop_region(image, token.bbox, padding=0.2)
+        if region.size == 0:
+            refined_tokens.append(token)
+            continue
+
+        surya_result = _run_surya_ocr_on_region(region)
+        if surya_result:
+            first = surya_result[0]
+            if isinstance(first, tuple) and len(first) >= 2:
+                box_points, text, confidence = first
+                xs = [p[0] for p in box_points]
+                ys = [p[1] for p in box_points]
+                bbox = BoundingBox(x1=min(xs), y1=min(ys), x2=max(xs), y2=max(ys))
+                refined_tokens.append(
+                    OCRToken(
+                        text=str(text).strip(),
+                        bbox=bbox,
+                        confidence=float(confidence),
+                        page=page_num,
+                        ocr_source="surya",
+                    )
+                )
+                continue
+
+        refined_tokens.append(token)
+
+    for checkbox in _detect_checkbox_regions(image):
+        refined_tokens.append(
+            OCRToken(
+                text="[checkbox]",
+                bbox=checkbox,
+                confidence=0.95,
+                page=page_num,
+                is_checkbox=True,
+                ocr_source="opencv",
+            )
         )
 
     # assign line_id using geometry-based line grouping so downstream
     # consumers (LLM prompt builder) can reconstruct reading order cheaply
-    lines = group_into_lines(tokens)
+    lines = group_into_lines(refined_tokens)
     for line_idx, idx_list in enumerate(lines):
         for tok_idx in idx_list:
-            tokens[tok_idx].line_id = line_idx
+            refined_tokens[tok_idx].line_id = line_idx
 
-    return tokens
+    return refined_tokens
 
 
 def build_ocr_result(filename: str, all_tokens: List[OCRToken], page_count: int) -> OCRResult:
@@ -196,10 +350,14 @@ def run_full_ocr_pipeline(file_bytes: bytes, filename: str) -> OCRResult:
             pre = preprocess(page_img)
             page_tokens = run_ocr_on_image(pre, page_num=page_num)
         except Exception as exc:
-            logger.warning(f"PaddleOCR failed for {filename} page {page_num}: {exc}")
+            logger.warning(f"OCR engine failed for {filename} page {page_num}: {exc}")
             page_tokens = []
 
         if not page_tokens and path.suffix.lower() == ".pdf":
+            # Fallback only helps born-digital PDFs that already have a text
+            # layer (e.g. exported from Word). Scanned/handwritten PDFs have
+            # no embedded text, so this will still yield 0 tokens for those —
+            # PaddleOCR actually working is the only real fix in that case.
             try:
                 doc = fitz.open(str(path))
                 text = doc[page_num].get_text("text") if page_num < doc.page_count else ""

@@ -50,7 +50,7 @@ async def extract_form(file: UploadFile = File(...)):
         # 2. Extraction Service: tokens -> validated JSON fields (via LLM, with retries)
         extraction_result = extraction_service.extract_fields(ocr_result)
         logger.info(
-            f"Extraction complete: {len(extraction_result.fields)} fields "
+            f"Extraction complete: document_type={extraction_result.document_type} "
             f"(attempts={extraction_result.llm_attempts})"
         )
 

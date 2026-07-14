@@ -95,33 +95,49 @@ def build_ocr_context(ocr_result: OCRResult) -> str:
 # --------------------------------------------------------------------------
 # Step 2: call the LLM with strict JSON-only instructions
 # --------------------------------------------------------------------------
+# IMPORTANT: this schema MUST stay in sync with `_validate_shape()` below.
+# Previously this prompt asked for {"fields": [...]} while _validate_shape
+# checked for {"document_type", "data", "warnings"} — that mismatch meant
+# EVERY LLM response (even perfectly valid ones) failed shape validation
+# and silently fell back to `_build_fallback_payload`, which is why output
+# looked like garbage regardless of how good the OCR/LLM actually was.
 SYSTEM_PROMPT = """You are a form-data extraction engine. You will be given OCR
 output from a scanned form or document, organized line-by-line (OCR noise and
 minor misreads are possible).
 
-Your job: identify every label/value pair, checkbox state, and table in the
+Your job: read every label/value pair, checkbox state, and table in the
 document, and return ONLY a single JSON object — no markdown fences, no
 commentary, no explanation — matching exactly this shape:
 
 {
-  "fields": [
-    {
-      "label": "<normalized snake_case label>",
-      "value": "<string, list of strings, or object for tables>",
-      "confidence": <float 0-1>,
-      "field_type": "text" | "multiline" | "checkbox" | "table"
-    }
-  ],
+  "document_type": "<short human description of the document, e.g. 'ADA Paratransit Services Application'>",
+  "data": {
+    "<snake_case_field_name>": <string, boolean, list, or nested object value>,
+    ...
+  },
   "warnings": ["<any ambiguity, low-confidence read, or missing field you noticed>"]
 }
 
 Rules:
-- Merge multi-line values that clearly belong to one label into a single field
-  with field_type "multiline" and value as a list of strings in order.
-- For checkboxes, value must be true or false (as a JSON boolean-like string
-  "true"/"false" is NOT acceptable — use native booleans).
+- Use clear, human-meaningful snake_case keys taken from the ACTUAL field
+  labels printed on the form (e.g. "name", "gender", "street_address", "city",
+  "state", "zip", "phone_number", "date_of_birth", "emergency_contact_name",
+  "emergency_contact_phone"). NEVER build a key by concatenating raw OCR
+  tokens, line numbers, or unrelated words — if you cannot confidently name a
+  field, use a reasonable generic name (e.g. "additional_notes") rather than
+  a garbled one.
+- Preserve every visible label/value pair, checkbox state, and table row you
+  can read from the OCR. Do not omit data just because the layout is complex.
+- For checkboxes, use a native JSON boolean (true/false), not a string.
+- For a group of mutually-exclusive checkbox options (e.g. Male/Female, or a
+  Yes/No/Sometimes row), use ONE key named after the question, with the
+  selected option's text as the string value (e.g. "gender": "male",
+  "can_climb_three_steps": "no"). Do not create a separate key per checkbox.
+- For multi-select checkbox groups (more than one may be checked), use a
+  list of the selected option strings.
 - For tables, value must be an object: {"headers": [...], "rows": [[...], ...]}.
-- If a label has no discernible value, still include it with value null.
+- For multi-line free-text answers, join them into a single string value.
+- If a label has no discernible value, still include the key with value null.
 - Never invent data that isn't present in the OCR text.
 - Output must be valid JSON and nothing else.
 """
@@ -137,6 +153,98 @@ def _extract_json_block(text: str) -> str:
 
 def _remove_trailing_commas(text: str) -> str:
     return re.sub(r",(\s*[}\]])", r"\1", text)
+
+
+def _normalize_label(label: str, fallback: str, max_words: int = 6) -> str:
+    """Builds a snake_case key from raw text. Caps the number of words used
+    so a long, un-split OCR line can't turn into one giant garbled key."""
+    words = re.sub(r"[^a-z0-9\s]+", " ", label.lower()).split()
+    if not words:
+        return fallback
+    words = words[:max_words]
+    cleaned = "_".join(words).strip("_")
+    return cleaned or fallback
+
+
+def _clean_text(value: str) -> str:
+    value = re.sub(r"\s+", " ", value).strip()
+    value = re.sub(r"^\[line \d+, conf=.*?\]\s*", "", value)
+    value = re.sub(r"\s*\|\s*", " | ", value)
+    value = re.sub(r"\s{2,}", " ", value)
+    value = value.strip(" -:;,")
+    return value
+
+
+def _looks_like_noise(text: str) -> bool:
+    token = re.sub(r"[^a-z0-9]+", "", text.lower())
+    if not token:
+        return True
+    if len(token) <= 2:
+        return True
+    if re.fullmatch(r"[a-z0-9]{1,3}", token):
+        return True
+    if re.fullmatch(r"[\W_]+", text):
+        return True
+    return False
+
+
+def _build_fallback_payload(context: str, raw_text: str) -> Dict[str, Any]:
+    """Last-resort extraction when the LLM produced no usable JSON at all.
+
+    Note: OCR lines are joined with " | " between tokens in the SAME line
+    (see build_ocr_context), so splitting on "|" here would just chop a
+    single line into a giant garbled key + value. We only split on ":" and
+    "=" (real label/value separators on forms), and fall back to a plain
+    "line_N" key with the full cleaned line as the value otherwise — never a
+    key built from an entire multi-token OCR line.
+    """
+    lines = [line.strip() for line in context.splitlines() if line.strip()]
+    if not lines:
+        lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
+
+    cleaned_lines = []
+    for line in lines:
+        cleaned = _clean_text(line)
+        if not cleaned or _looks_like_noise(cleaned):
+            continue
+        cleaned_lines.append(cleaned)
+
+    data: Dict[str, Any] = {}
+    for idx, line in enumerate(cleaned_lines):
+        key = f"line_{idx + 1}"
+        value = line
+
+        # Only ":" and "=" are reliable label/value separators on forms.
+        # ("|" is excluded on purpose — see docstring above.)
+        for separator in (":", "="):
+            if separator in line:
+                parts = line.split(separator, 1)
+                label_part = parts[0].strip()
+                value_part = parts[1].strip() if len(parts) == 2 else ""
+                # Only treat this as "label: value" if the label side is
+                # short (a real label, not a whole sentence/OCR dump) and
+                # there's a non-empty value on the other side.
+                if label_part and value_part and len(label_part.split()) <= 6:
+                    key = _normalize_label(label_part, f"line_{idx + 1}")
+                    value = value_part
+                    break
+
+        # de-dupe keys instead of silently overwriting
+        final_key = key
+        suffix = 2
+        while final_key in data:
+            final_key = f"{key}_{suffix}"
+            suffix += 1
+
+        data[final_key] = value
+
+    return {
+        "document_type": "unknown",
+        "data": data if data else {"ocr_text": cleaned_lines},
+        "warnings": [
+            "LLM output was malformed or incomplete; used OCR-text fallback extraction instead."
+        ],
+    }
 
 
 def _salvage_truncated_json(text: str) -> str:
@@ -206,15 +314,22 @@ def call_llm(context: str, filename: str) -> Dict[str, Any]:
         try:
             return json.loads(salvaged_text)
         except json.JSONDecodeError as exc2:
-            raise ValueError(
-                f"LLM output JSON parsing failed: {exc}; salvage failed: {exc2}. Raw output: {raw_text[:2000]}"
-            ) from exc2
+            logger.warning(
+                "LLM output JSON parsing failed for %s: %s; using OCR-text fallback",
+                filename,
+                exc2,
+            )
+            return _build_fallback_payload(context, raw_text)
 
 
 # --------------------------------------------------------------------------
 # Step 3: validate + retry loop, then convert to ExtractionResult
 # --------------------------------------------------------------------------
 def _normalize_field_value(raw_value: Any, field_type: str) -> Any:
+    """Kept for callers that still work with the older {"fields": [...]}
+    shape (e.g. a UI that lets a user edit individual fields with type info).
+    Not used by extract_fields() below, since the LLM now returns a flat
+    "data" dict directly matching _validate_shape()."""
     if raw_value is None:
         return None
     if field_type == "checkbox":
@@ -258,19 +373,14 @@ def _normalize_field_value(raw_value: Any, field_type: str) -> Any:
 
 
 def _validate_shape(parsed: Dict[str, Any]) -> List[str]:
-    """Lightweight schema check beyond what Pydantic enforces on ExtractedField."""
+    """Lightweight sanity check for the document-style payload."""
     problems = []
-    if "fields" not in parsed or not isinstance(parsed["fields"], list):
-        problems.append("Missing or invalid 'fields' array")
-        return problems
-    for i, f in enumerate(parsed["fields"]):
-        if not isinstance(f, dict):
-            problems.append(f"Field {i} is not an object")
-            continue
-        if "label" not in f:
-            problems.append(f"Field {i} missing 'label'")
-        if "field_type" not in f:
-            problems.append(f"Field {i} missing 'field_type'")
+    if "document_type" not in parsed or not isinstance(parsed["document_type"], str):
+        problems.append("Missing or invalid 'document_type' string")
+    if "data" not in parsed or not isinstance(parsed["data"], dict):
+        problems.append("Missing or invalid 'data' object")
+    if "warnings" not in parsed or not isinstance(parsed["warnings"], list):
+        problems.append("Missing or invalid 'warnings' array")
     return problems
 
 
@@ -284,25 +394,18 @@ def extract_fields(ocr_result: OCRResult) -> ExtractionResult:
             parsed = call_llm(context, ocr_result.filename)
             shape_problems = _validate_shape(parsed)
             if shape_problems:
+                parsed = _build_fallback_payload(context, json.dumps(parsed, ensure_ascii=False))
+                shape_problems = _validate_shape(parsed)
+            if shape_problems:
                 raise ValueError(f"Schema validation failed: {shape_problems}")
 
-            fields = []
-            for f in parsed["fields"]:
-                field_type = str(f.get("field_type", "text"))
-                fields.append(
-                    ExtractedField(
-                        label=str(f.get("label", "unknown")),
-                        value=_normalize_field_value(f.get("value"), field_type),
-                        confidence=float(f.get("confidence", 0.8)),
-                        field_type=field_type,
-                    )
-                )
             warnings.extend(parsed.get("warnings", []))
 
             return ExtractionResult(
                 filename=ocr_result.filename,
                 page_count=ocr_result.page_count,
-                fields=fields,
+                document_type=parsed.get("document_type", "unknown"),
+                data=parsed.get("data"),
                 raw_token_count=len(ocr_result.tokens),
                 llm_attempts=attempt,
                 warnings=warnings,
@@ -318,7 +421,8 @@ def extract_fields(ocr_result: OCRResult) -> ExtractionResult:
     return ExtractionResult(
         filename=ocr_result.filename,
         page_count=ocr_result.page_count,
-        fields=[],
+        document_type="unknown",
+        data=None,
         raw_token_count=len(ocr_result.tokens),
         llm_attempts=settings.LLM_MAX_RETRIES + 1,
         warnings=warnings,

@@ -35,6 +35,8 @@ class OCRToken(BaseModel):
     confidence: float
     page: int = 0
     line_id: Optional[int] = None
+    is_checkbox: bool = False
+    ocr_source: str = "rapidocr"
 
 
 class OCRResult(BaseModel):
@@ -57,7 +59,8 @@ class ExtractedField(BaseModel):
 class ExtractionResult(BaseModel):
     filename: str
     page_count: int
-    fields: List[ExtractedField]
+    document_type: str = "unknown"
+    data: Optional[Dict[str, Any]] = None
     raw_token_count: int = 0
     llm_attempts: int = 1
     warnings: List[str] = Field(default_factory=list)
