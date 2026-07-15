@@ -1,85 +1,41 @@
 # Form Extractor API
-flowchart TD
+```mermaid
+graph TD
 
-%% =========================
-%% User Entry
-%% =========================
+Upload --> Loader
 
-A([User Uploads PDF / Image])
+Loader -->|PDF| PDFConverter
+Loader -->|Image| ImageLoader
 
-A --> B[Upload Agent]
+PDFConverter --> Preprocessing
+ImageLoader --> Preprocessing
 
-B --> C{Document Type}
+Preprocessing --> OCR
 
-C -->|PDF| D[PDF Conversion Agent]
-C -->|Image| E[Image Loader Agent]
+OCR --> Layout
 
-D --> F[Image Preprocessing Agent]
-E --> F
+Layout --> Confidence
 
-%% =========================
-%% OCR Layer
-%% =========================
+Confidence -->|High Confidence| Merge
 
-F --> G[OCR Agent<br/>PaddleOCR / Surya]
+Confidence -->|Low Confidence| ROI
 
-G --> H[OCR Parser Agent]
+ROI --> VisionLLM
 
-H --> I[Layout Analysis Agent]
+VisionLLM --> Merge
 
-I --> J[Field Detection Agent]
+Merge --> FieldMapper
 
-%% =========================
-%% Confidence Check
-%% =========================
+FieldMapper --> DocumentAnalyzer
 
-J --> K[Confidence Evaluation Agent]
+DocumentAnalyzer --> JSONGenerator
 
-K -->|High Confidence| L[Accept OCR Fields]
+JSONGenerator --> Validator
 
-K -->|Low Confidence| M[ROI Detection Agent]
+Validator -->|Valid| Response
 
-%% =========================
-%% Vision Branch
-%% =========================
-
-M --> N[Crop Handwritten Regions]
-
-N --> O[Vision LLM Agent]
-
-O --> P[Handwriting Extraction Agent]
-
-%% =========================
-%% Merge
-%% =========================
-
-L --> Q[Merge Extraction Agent]
-
-P --> Q
-
-%% =========================
-%% Understanding Layer
-%% =========================
-
-Q --> R[Field Mapping Agent]
-
-R --> S[Document Understanding Agent]
-
-S --> T[JSON Generation Agent]
-
-%% =========================
-%% Validation
-%% =========================
-
-T --> U{JSON Valid?}
-
-U -->|Yes| V([Return JSON])
-
-U -->|No| W[Correction Agent]
-
-W --> T
-Upload any PDF/Image of a form -> get structured JSON back.
-
+Validator -->|Invalid| Retry
+```
 ## Architecture (3 independent services)
 
 ```
