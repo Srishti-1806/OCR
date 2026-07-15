@@ -1,4 +1,31 @@
 # Form Extractor API
+
+```mermaid
+flowchart TD
+    A([Upload PDF or image]) --> B[Save file to upload dir]
+    B --> C{Input type}
+    C -->|PDF| D[Render pages with Poppler or PyMuPDF]
+    C -->|Image| E[Load image directly]
+    D --> F[Preprocess page images]
+    E --> F
+    F --> G[Run primary OCR]
+    G --> H{OCR returned text?}
+    H -->|No| I[Fallback to docTR]
+    H -->|Yes| J{Confidence low?}
+    I --> K{docTR returned text?}
+    K -->|No| L[Fallback to Surya]
+    K -->|Yes| J
+    J -->|Yes| L
+    J -->|No| M[Build OCR context]
+    L --> M
+    M --> N[LLM-based extraction]
+    N --> O{Valid JSON?}
+    O -->|No| P[Use fallback payload]
+    O -->|Yes| Q[Return extraction result]
+    P --> Q
+```
+
+with llm
 ```mermaid
 flowchart TD
 
