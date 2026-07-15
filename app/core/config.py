@@ -28,6 +28,11 @@ class Settings:
     LLM_MAX_RETRIES: int = int(os.getenv("LLM_MAX_RETRIES", "2"))
     LLM_MAX_TOKENS: int = int(os.getenv("LLM_MAX_TOKENS", "2000"))
 
+    # --- Vision fallback ---
+    VISION_MODEL_NAME: str = os.getenv("VISION_MODEL_NAME", "Qwen/Qwen2.5-VL-7B-Instruct")
+    VISION_USE_GPU: bool = os.getenv("VISION_USE_GPU", "1").lower() in {"1", "true", "yes", "on"}
+    VISION_MAX_RESOLUTION: int = int(os.getenv("VISION_MAX_RESOLUTION", "2048"))
+
     # --- Misc ---
     ALLOWED_EXTENSIONS = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".bmp"}
     MAX_FILE_SIZE_MB: int = int(os.getenv("MAX_FILE_SIZE_MB", "20"))

@@ -25,7 +25,11 @@ import uuid
 from pathlib import Path
 from typing import List, Optional
 
-import cv2
+try:
+    import cv2
+except Exception:  # pragma: no cover - headless/container fallback
+    cv2 = None
+
 import numpy as np
 from PIL import Image
 import fitz
@@ -63,31 +67,37 @@ def save_upload(file_bytes: bytes, filename: str) -> Path:
 # --------------------------------------------------------------------------
 # PDF -> images
 # --------------------------------------------------------------------------
-def pdf_to_images(pdf_path: Path) -> List[np.ndarray]:
-    from pdf2image import convert_from_path
-    from pdf2image.exceptions import PDFInfoNotInstalledError
+def _pil_to_numpy(image: Image.Image) -> np.ndarray:
+    if cv2 is not None:
+        return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+    return np.array(image)
 
+
+def _fitz_to_numpy(pdf_path: Path) -> List[np.ndarray]:
+    doc = fitz.open(str(pdf_path))
+    images: List[np.ndarray] = []
+    for page in doc:
+        pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        images.append(_pil_to_numpy(image))
+    doc.close()
+    return images
+
+
+def pdf_to_images(pdf_path: Path) -> List[np.ndarray]:
     try:
+        from pdf2image import convert_from_path
+        from pdf2image.exceptions import PDFInfoNotInstalledError
+
         kwargs = {}
         if settings.POPPLER_PATH:
             kwargs["poppler_path"] = settings.POPPLER_PATH
         pil_pages = convert_from_path(str(pdf_path), dpi=settings.PDF_DPI, **kwargs)
-    except PDFInfoNotInstalledError as e:
-        raise ValueError(
-            "Unable to get page count. Is poppler installed and in PATH? "
-            "On Windows, install Poppler and add its Library\\bin folder to PATH. "
-            "Then restart your terminal and retry."
-        ) from e
-    except OSError as e:
-        if "Unable to get page count" in str(e) or "pdfinfo" in str(e).lower():
-            raise ValueError(
-                "Unable to get page count. Is poppler installed and in PATH? "
-                "On Windows, install Poppler and add its Library\\bin folder to PATH. "
-                "Then restart your terminal and retry."
-            ) from e
-        raise
+    except (PDFInfoNotInstalledError, OSError, Exception) as exc:
+        logger.info("Falling back to PyMuPDF rendering for %s: %s", pdf_path, exc)
+        return _fitz_to_numpy(pdf_path)
 
-    images = [cv2.cvtColor(np.array(p), cv2.COLOR_RGB2BGR) for p in pil_pages]
+    images = [_pil_to_numpy(page) for page in pil_pages]
     logger.info(f"Converted PDF -> {len(images)} page image(s)")
     return images
 
@@ -96,10 +106,16 @@ def load_image_any(path: Path) -> List[np.ndarray]:
     """Returns a list of page images regardless of whether input is PDF or a plain image."""
     if path.suffix.lower() == ".pdf":
         return pdf_to_images(path)
-    img = cv2.imread(str(path))
-    if img is None:
-        raise ValueError(f"Could not read image file: {path}")
-    return [img]
+
+    if cv2 is not None:
+        img = cv2.imread(str(path))
+        if img is None:
+            raise ValueError(f"Could not read image file: {path}")
+        return [img]
+
+    with Image.open(path) as img:
+        image = img.convert("RGB")
+        return [_pil_to_numpy(image)]
 
 
 # --------------------------------------------------------------------------
@@ -126,6 +142,10 @@ def preprocess(image: np.ndarray) -> np.ndarray:
     """Gray -> denoise -> adaptive threshold -> deskew. Returns a 3-channel
     BGR image because PaddleOCR expects color input, even though the content
     is effectively binarized."""
+    if cv2 is None:
+        pil_image = Image.fromarray(image).convert("L")
+        return np.array(pil_image.convert("RGB"))
+
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     denoised = cv2.fastNlMeansDenoising(gray, h=10)
     thresh = cv2.adaptiveThreshold(
@@ -227,6 +247,8 @@ def _crop_region(image: np.ndarray, bbox: BoundingBox, padding: float = 0.15) ->
 
 
 def _detect_checkbox_regions(image: np.ndarray) -> List[BoundingBox]:
+    if cv2 is None:
+        return []
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     blur = cv2.GaussianBlur(gray, (5, 5), 0)
     _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY_INV | cv2.THRESH_OTSU)
@@ -248,6 +270,8 @@ def _detect_checkbox_regions(image: np.ndarray) -> List[BoundingBox]:
 
 
 def run_ocr_on_image(image: np.ndarray, page_num: int = 0) -> List[OCRToken]:
+    if cv2 is None:
+        return []
     engine = _load_engine()
     result, _elapse = engine(image)
 
