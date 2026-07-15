@@ -34,7 +34,7 @@ JSONGenerator --> Validator
 
 Validator -->|Valid| Response
 
-Validator -->|Invalid| Retry
+Validator -->|Invalid| Retry -->Preprocessing
 ```
 ## Architecture (3 independent services)
 
