@@ -1,5 +1,83 @@
 # Form Extractor API
+flowchart TD
 
+%% =========================
+%% User Entry
+%% =========================
+
+A([User Uploads PDF / Image])
+
+A --> B[Upload Agent]
+
+B --> C{Document Type}
+
+C -->|PDF| D[PDF Conversion Agent]
+C -->|Image| E[Image Loader Agent]
+
+D --> F[Image Preprocessing Agent]
+E --> F
+
+%% =========================
+%% OCR Layer
+%% =========================
+
+F --> G[OCR Agent<br/>PaddleOCR / Surya]
+
+G --> H[OCR Parser Agent]
+
+H --> I[Layout Analysis Agent]
+
+I --> J[Field Detection Agent]
+
+%% =========================
+%% Confidence Check
+%% =========================
+
+J --> K[Confidence Evaluation Agent]
+
+K -->|High Confidence| L[Accept OCR Fields]
+
+K -->|Low Confidence| M[ROI Detection Agent]
+
+%% =========================
+%% Vision Branch
+%% =========================
+
+M --> N[Crop Handwritten Regions]
+
+N --> O[Vision LLM Agent]
+
+O --> P[Handwriting Extraction Agent]
+
+%% =========================
+%% Merge
+%% =========================
+
+L --> Q[Merge Extraction Agent]
+
+P --> Q
+
+%% =========================
+%% Understanding Layer
+%% =========================
+
+Q --> R[Field Mapping Agent]
+
+R --> S[Document Understanding Agent]
+
+S --> T[JSON Generation Agent]
+
+%% =========================
+%% Validation
+%% =========================
+
+T --> U{JSON Valid?}
+
+U -->|Yes| V([Return JSON])
+
+U -->|No| W[Correction Agent]
+
+W --> T
 Upload any PDF/Image of a form -> get structured JSON back.
 
 ## Architecture (3 independent services)
