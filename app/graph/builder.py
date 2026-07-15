@@ -50,15 +50,14 @@ def build_extraction_graph() -> Any:
 
     workflow.add_conditional_edges(
         "confidence_node",
-        lambda state: "surya_ocr_node" if state.get("used_source") != "paddle" else "merge_node",
+        lambda state: "surya_ocr_node" if state.get("used_source") != "paddle" else "roi_crop_node",
         {
-            "merge_node": "merge_node",
+            "roi_crop_node": "roi_crop_node",
             "surya_ocr_node": "surya_ocr_node",
         },
     )
 
-    workflow.add_edge("surya_ocr_node", "confidence_node")
-    workflow.add_edge("confidence_node", "roi_crop_node")
+    workflow.add_edge("surya_ocr_node", "roi_crop_node")
     workflow.add_edge("roi_crop_node", "vision_llm_node")
     workflow.add_edge("vision_llm_node", "merge_node")
     workflow.add_edge("merge_node", "consistency_validation_node")
