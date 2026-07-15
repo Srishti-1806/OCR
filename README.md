@@ -1,66 +1,60 @@
 # Form Extractor API
 ```mermaid
-graph TD
+flowchart TD
 
-Upload --> Loader
+A([Upload Form])
 
-Loader -->|PDF| PDFConverter
-Loader -->|Image| ImageLoader
+A --> B[Upload Agent]
 
-PDFConverter --> Preprocessing
-ImageLoader --> Preprocessing
+B --> C{Input Type}
 
-Preprocessing --> OCR
+C -->|PDF| D[PDF Conversion Agent]
+C -->|Image| E[Image Loader Agent]
 
-OCR --> Layout
+D --> F[Image Preprocessing Agent]
+E --> F
 
-Layout --> Confidence
+F --> G[OCR Agent<br/>PaddleOCR / Surya]
 
-Confidence -->|High Confidence| Merge
+G --> H[OCR Parsing Agent]
 
-Confidence -->|Low Confidence| ROI
+H --> I[Layout Analysis Agent]
 
-ROI --> VisionLLM
+I --> J[Field Detection Agent]
 
-VisionLLM --> Merge
+J --> K[Confidence Evaluation Agent]
 
-Merge --> FieldMapper
+K --> L{Routing Decision}
 
-FieldMapper --> DocumentAnalyzer
+L -->|High Confidence| M[Accept OCR Results]
 
-DocumentAnalyzer --> JSONGenerator
+L -->|Low Confidence / Handwritten| N[ROI Detection Agent]
 
-JSONGenerator --> Validator
+N --> O[Crop Handwritten Region]
 
-Validator -->|Valid| Response
+O --> P[Vision LLM Agent]
 
-Validator -->|Invalid| Retry -->Preprocessing
-```
-## Architecture (3 independent services)
+P --> Q[Extract Handwritten Text]
 
-```
-POST /extract
-  |
-  v
-[API Service]  routers/extract.py
-  - upload handling, orchestration, error handling, logging
-  |
-  v
-[OCR Service]  services/ocr_service.py
-  - save_upload()
-  - pdf_to_images() / load_image_any()
-  - preprocess()        (gray -> denoise -> adaptive threshold -> deskew)
-  - run_ocr_on_image()  (PaddleOCR)
-  - build_ocr_result()  -> normalized OCRToken list (text, bbox, confidence, line_id)
-  |
-  v
-[Extraction Service]  services/extraction_service.py
-  - build_ocr_context()  -> line-grouped text layout for the LLM
-  - call_llm()           -> Claude, strict JSON-only system prompt
-  - extract_fields()     -> validates JSON shape, retries on failure, returns ExtractionResult
-  |
-  v
-FastAPI JSON Response
+M --> R[Merge OCR + Vision Results]
+
+Q --> R
+
+R --> S[Consistency Validation Agent]
+
+S --> T[Field Mapping Agent]
+
+T --> U[Document Understanding Agent]
+
+U --> V[Structured JSON Generator]
+
+V --> W{Schema Validation}
+
+W -->|Valid| X([Return JSON])
+
+W -->|Invalid| Y[JSON Repair Agent]
+
+Y --> W
 ```
 
 **Why the split matters:** swapping PaddleOCR for another engine (Surya, Tesseract,
