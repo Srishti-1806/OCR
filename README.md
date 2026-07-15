@@ -2,59 +2,47 @@
 ```mermaid
 flowchart TD
 
-A([Upload Form])
+    Start([START])
 
-A --> B[Upload Agent]
+    Start --> UploadAgent
 
-B --> C{Input Type}
+    UploadAgent --> LoaderAgent
 
-C -->|PDF| D[PDF Conversion Agent]
-C -->|Image| E[Image Loader Agent]
+    LoaderAgent --> PreprocessingAgent
 
-D --> F[Image Preprocessing Agent]
-E --> F
+    PreprocessingAgent --> PaddleOCRAgent
 
-F --> G[OCR Agent<br/>PaddleOCR / Surya]
+    PaddleOCRAgent --> ConfidenceAgent
 
-G --> H[OCR Parsing Agent]
+    ConfidenceAgent -->|High Confidence| MergeAgent
 
-H --> I[Layout Analysis Agent]
+    ConfidenceAgent -->|Low Confidence| SuryaOCRAgent
 
-I --> J[Field Detection Agent]
+    SuryaOCRAgent --> SuryaConfidenceAgent
 
-J --> K[Confidence Evaluation Agent]
+    SuryaConfidenceAgent -->|High Confidence| MergeAgent
 
-K --> L{Routing Decision}
+    SuryaConfidenceAgent -->|Low Confidence| ROICropAgent
 
-L -->|High Confidence| M[Accept OCR Results]
+    ROICropAgent --> VisionLLMAgent
 
-L -->|Low Confidence / Handwritten| N[ROI Detection Agent]
+    VisionLLMAgent --> MergeAgent
 
-N --> O[Crop Handwritten Region]
+    MergeAgent --> ConsistencyValidationAgent
 
-O --> P[Vision LLM Agent]
+    ConsistencyValidationAgent --> FieldMappingAgent
 
-P --> Q[Extract Handwritten Text]
+    FieldMappingAgent --> DocumentUnderstandingAgent
 
-M --> R[Merge OCR + Vision Results]
+    DocumentUnderstandingAgent --> JSONGeneratorAgent
 
-Q --> R
+    JSONGeneratorAgent --> SchemaValidationAgent
 
-R --> S[Consistency Validation Agent]
+    SchemaValidationAgent -->|Valid| End([END])
 
-S --> T[Field Mapping Agent]
+    SchemaValidationAgent -->|Invalid| JSONRepairAgent
 
-T --> U[Document Understanding Agent]
-
-U --> V[Structured JSON Generator]
-
-V --> W{Schema Validation}
-
-W -->|Valid| X([Return JSON])
-
-W -->|Invalid| Y[JSON Repair Agent]
-
-Y --> W
+    JSONRepairAgent --> SchemaValidationAgent
 ```
 
 **Why the split matters:** swapping PaddleOCR for another engine (Surya, Tesseract,
